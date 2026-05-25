@@ -1,73 +1,98 @@
-import asyncio
 import os
-import socket
-
-from aiogram import Bot, Dispatcher
+import asyncio
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import CommandStart
 from aiogram.types import Message
-from dotenv import load_dotenv
-from openai import OpenAI
+from groq import Groq
+from flask import Flask
+from threading import Thread
 
-# Фикс для Windows network timeout
-socket.setdefaulttimeout(30)
-
-# Загружаем .env
-load_dotenv()
+# =========================
+# TOKENS
+# =========================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# Проверка ключей
-print("BOT TOKEN LOADED:", bool(BOT_TOKEN))
-print("OPENAI KEY LOADED:", bool(OPENAI_API_KEY))
+# =========================
+# GROQ CLIENT
+# =========================
 
-# Telegram Bot
+client = Groq(api_key=GROQ_API_KEY)
+
+# =========================
+# TELEGRAM BOT
+# =========================
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# OpenAI
-client = OpenAI(api_key=OPENAI_API_KEY)
+# =========================
+# FLASK SERVER (Render fix)
+# =========================
 
-SYSTEM_PROMPT = """
-Ты AI-антипрокрастинационный коуч.
+app = Flask(__name__)
 
-Твоя задача:
-- помогать человеку начать действие
-- разбивать задачи на маленькие шаги
-- уменьшать тревогу
-- не осуждать
-- отвечать коротко и понятно
-"""
+@app.route("/")
+def home():
+    return "Bot is running!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# =========================
+# COMMANDS
+# =========================
+
+@dp.message(CommandStart())
+async def start(message: Message):
+    await message.answer("🚀 LEVEL 5 PRO BOT ONLINE")
+
+# =========================
+# AI CHAT
+# =========================
 
 @dp.message()
-async def handle_message(message: Message):
-    try:
-        user_text = message.text
+async def ai_chat(message: Message):
+    user_text = message.text
 
+    try:
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_text}
-            ]
+                {
+                    "role": "system",
+                    "content": "You are a powerful AI assistant."
+                },
+                {
+                    "role": "user",
+                    "content": user_text
+                }
+            ],
+            temperature=0.7,
+            max_tokens=1024
         )
 
-        reply = response.choices[0].message.content
+        ai_response = response.choices[0].message.content
 
-        await message.answer(reply)
+        await message.answer(ai_response)
 
     except Exception as e:
-        print("ERROR:", e)
-        await message.answer("Ошибка при запросе к AI")
+        await message.answer(f"❌ AI Error:\n{str(e)}")
+
+# =========================
+# MAIN
+# =========================
 
 async def main():
-    print("Бот запускается...")
-
-    # Удаляем старые webhook
-    await bot.delete_webhook(drop_pending_updates=True)
-
-    print("Бот запущен 🚀")
-
+    print("🤖 Bot started")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    print("🚀 LEVEL 5 PRO BOT STARTED")
+
+    web_thread = Thread(target=run_web)
+    web_thread.start()
+
     asyncio.run(main())
